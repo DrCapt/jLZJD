@@ -41,6 +41,12 @@ public class LZJDf implements DistanceMetric, KernelTrick
     static final ThreadLocal<IntList> LOCAL_INT_LIST = ThreadLocal.withInitial(()->new IntList());
     static final ThreadLocal<IntSetNoRemove> LOCAL_X_SET = ThreadLocal.withInitial(()->new IntSetNoRemove(1024, 0.65f));
     
+    // Codes for skipping FASTA metadata.
+    static final int SKIP_START_BYTE   = ">".getBytes()[0];
+    static final int SKIP_END_BYTE     = "\n".getBytes()[0];
+    static final int SKIP_BYTE_NEWLINE = "\n".getBytes()[0];
+    static final int SKIP_BYTE_N       = "N".getBytes()[0];
+
     /**
      * Fills a set of ByteBuffers according the the LZ algorithm. Returns the
      * set as a list of unique integer hashes found.
@@ -56,6 +62,7 @@ public class LZJDf implements DistanceMetric, KernelTrick
         int pos = 0;
         int end = 0;
         byte[] buffer = localByteBuffer.get();
+        boolean skipping = false;
 
         while(true)
         {
@@ -66,12 +73,29 @@ public class LZJDf implements DistanceMetric, KernelTrick
                     break;//EOF, we are done
                 pos = 0;
             }
-            //else, procceed
-            int hash = running_hash.pushByte(buffer[pos++]);
-            if(x_set.add(hash))
-            {//never seen it before, put it in!
-                ints.add(hash);
-                running_hash.reset();
+
+            // Character skipping logic for FASTA format
+            if (buffer[pos] == SKIP_START_BYTE) {
+                running_hash.reset(); // Beginning of new read, so restart running hash.
+                skipping = true;
+                pos++;
+            } else if (buffer[pos] == SKIP_END_BYTE) {
+                skipping = false;
+                pos++;
+            } else if (skipping) {
+                pos++;
+            } else if (buffer[pos] == SKIP_BYTE_NEWLINE) {
+                pos++;
+            } else if (buffer[pos] == SKIP_BYTE_N) {
+                pos++;
+            } else {
+                // Hash building.
+                int hash = running_hash.pushByte(buffer[pos++]);
+                if(x_set.add(hash))
+                {//never seen it before, put it in!
+                    ints.add(hash);
+                    running_hash.reset();
+                }
             }
         }
     }
